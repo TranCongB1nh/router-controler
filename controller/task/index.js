@@ -3,8 +3,22 @@ const { StatusCode, writeFile, getBody } = require("../../utils.js");
 const fs = require("fs");
 
 function getTaskList(request, response) {
+  // Extract the Authorization header
+  const authHeader = request.headers['authorization'];
+
+  // Check if the Authorization header is equal to "This is token"
+  if (authHeader !== "This is token") {
+    response.writeHead(StatusCode.UNAUTHORIZED, {
+      "Content-Type": "text/plain",
+    });
+    response.end("Missing or invalid token");
+    return;
+  }
+
+  // Proceed with filtering the task list based on the status
   const status = request.url.split("?status=")[1] || "all";
   let statusTaskList = [];
+  
   if (status === "done") {
     statusTaskList = taskList.filter((item) => item.completed === true);
   } else if (status === "undone") {
@@ -12,41 +26,69 @@ function getTaskList(request, response) {
   } else if (status === "all") {
     statusTaskList = taskList;
   }
+
+  // Respond with the filtered task list
   response.writeHead(StatusCode.OK, { "Content-Type": "application/json" });
   response.end(JSON.stringify(statusTaskList));
 }
 
 async function createTask(request, response) {
   try {
-    const body = await getBody(request);
-    const { id, name, completed } = JSON.parse(body);
+    // Extract the Authorization header
+    const authHeader = request.headers['authorization'];
+
+    // Check if the Authorization header is equal to "This is token"
+    if (authHeader !== "This is token") {
+      response.writeHead(StatusCode.UNAUTHORIZED, {
+        "Content-Type": "text/plain",
+      });
+      response.end("Missing or invalid token");
+      return;
+    }
+
+    // Proceed with the task creation if the token is valid
+    const { id, name, completed } = await getBody(request);
+
+    // Check for missing fields
     if (id === undefined || name === undefined || completed === undefined) {
+      console.log("Missing fields:", { id, name, completed });
       response.writeHead(StatusCode.BAD_REQUEST, {
         "Content-Type": "text/plain",
       });
       response.end("Bad request");
-    } else {
-      let task = taskList.find((item) => item.id === id || item.name === name);
-      if (task) {
-        response.writeHead(StatusCode.BAD_REQUEST, {
-          "Content-Type": "text/plain",
-        });
-        response.end("Bad request");
-      } else {
-        taskList.push(JSON.parse(body));
-        writeFile("./data/data.json", JSON.stringify(taskList));
-        response.writeHead(StatusCode.CREATED, {
-          "Content-Type": "application/json",
-        });
-        response.end(JSON.stringify({ id: id }));
-      }
+      return;
     }
+
+    // Check for duplicate task
+    let task = taskList.find((item) => item.id === id || item.name === name);
+    if (task) {
+      console.log("Duplicate task found:", task);
+      response.writeHead(StatusCode.BAD_REQUEST, {
+        "Content-Type": "text/plain",
+      });
+      response.end("Bad request");
+      return;
+    }
+
+    // If everything is okay, add the new task
+    taskList.push({ id, name, completed });
+    writeFile("./data/data.json", JSON.stringify(taskList));
+    response.writeHead(StatusCode.CREATED, {
+      "Content-Type": "application/json",
+    });
+    response.end(JSON.stringify({ id: id }));
+    
   } catch (error) {
-    if (error) {
-      console.error("cant read body", error);
-    }
+    console.error("can't read body", error);
+    response.writeHead(StatusCode.INTERNAL_SERVER_ERROR, {
+      "Content-Type": "text/plain",
+    });
+    response.end("Internal Server Error");
   }
 }
+
+
+
 
 async function updateTask(request, response) {
   try {
